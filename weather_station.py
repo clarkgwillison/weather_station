@@ -35,8 +35,8 @@ class PigpioBitBang:
 			assert data_array < 256
 			data_array = [data_array]
 		(count, data) = self.pi.bb_i2c_zip(self.SDA, [self.BB_ADDRESS, address, self.BB_START, 
-						self.BB_WRITE, len(data_array)+1, pointer_reg] + \
-						data_array + [self.BB_STOP, self.BB_END])
+					self.BB_WRITE, len(data_array)+1, pointer_reg] + \
+					data_array + [self.BB_STOP, self.BB_END])
 		return data
 
 	def close_bus(self):
@@ -46,7 +46,7 @@ class RepeatStart(PigpioBitBang):
 	"""Repeated start hack for TI HDC1050"""
 	def pr_read(self, address, pointer_reg, read_bytes):
 		(count, data) = pi.bb_i2c_zip(SDA, [BB_ADDRESS, address,
-					{BB_START, BB_WRITE, BB_ESCAPE, pointer_reg, 
+					BB_START, BB_WRITE, BB_ESCAPE, pointer_reg, 
 					BB_START, BB_READ, read_bytes, BB_STOP, BB_END])
 		return data
 
