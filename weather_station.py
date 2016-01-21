@@ -64,7 +64,7 @@ class PointerWrite(PigpioI2CBitBang):
 		 			self.BB_END])
 		return (count, data)
 
-class Altitude:
+class MPL3115A2:
 	"""Freescale MPL3115A2 Driver"""
 	ALT_I2C = 0x60
 	CONTROL_REG_ADDR = 0x26
@@ -103,20 +103,43 @@ class Altitude:
 		raw = self.bb_channel.read(self.ALT_I2C, self.P_MSB, 5)
 		return raw
 
-	def package_output(self, raw):
-		if len(raw) != 6:
-			return (None, None)
-		pressure = int.from_bytes(raw[0:2], byteorder='big', signed=False)
-		pressure_decimal = (raw[3] >> 4)/10.0
+	def twos_comp(self, val, bits):
+	    """compute the 2's compliment of int value val"""
+	    if (val & (1 << (bits - 1))) != 0: # if sign bit is set e.g., 8bit: 128-255
+	        val = val - (1 << bits)        # compute negative value
+	    return val                         # return positive value as is
 
-		temp = int.from_bytes(raw[3:4], byteorder='big', signed=False)
-		temp_decimal = (raw[4] >> 4)/10.0
-		return (pressure+pressure_decimal, temp+temp_decimal)
+	def package_output(self, raw, measurement):
+		""" Convert raw bitarray output from I2C read into pressure, 20 bit unsigned, altitude,
+		 20 bit signed with decimal, or temperature 16 bit unsigned.
+
+		 measurement =           0     |      1      |      2
+		 measurement type =  altitude  |   pressure  |  temperature
+		 """
+		 # check for 6 byte i2c transaction
+		if len(raw) != 6:
+			return None
+
+		# altiude case
+		if measurement == 0:
+			altitude = int.from_bytes(raw[0:3], byteorder='big', signed=False)
+			altitude = self.twos_comp(altitude, 24)/256
+			return altitude
+
+		# pressure case
+		if measurement == 1:
+			pressure = int.from_bytes(raw[0:3], byteorder='big', signed=False)/64.0
+			return pressure
+
+		# temperature case
+		if measurement == 2:
+			temp = int.from_bytes(raw[3:5], byteorder='big', signed=False)/256.0
+			return temp
 
 	def close_channel(self):
 		self.bb_channel.close_bus()
 
-class Humidity:
+class HDC1050:
 	"""TI HDC1050 Driver"""
 	HUM_I2C = 0x40
 	CONTROL_REG_ADDR = 0x02
@@ -157,9 +180,9 @@ class Humidity:
 class WeatherStation:
 	"""WeatherStation API for 21 Bitcoin Computer expansion board"""
 
-	def HDC1050_humidity(self):
+	def humidity(self):
 		"""Returns current measured humidity as a percentage."""
-		ti = Humidity()
+		ti = HDC1050()
 		while ti.ready() == False:
 			time.sleep(1)
 		raw = ti.get_data()
@@ -168,9 +191,9 @@ class WeatherStation:
 		ti.close_channel()
 		return(hum)
 
-	def HDC1050_temperature(self):
+	def temperature(self):
 		"""Returns current measured temperature in degrees C."""
-		ti = Humidity()
+		ti = HDC1050()
 		while ti.ready() == False:
 			time.sleep(1)
 		raw = ti.get_data()
@@ -179,42 +202,42 @@ class WeatherStation:
 		ti.close_channel()
 		return(temp)
 
-	def MPL3115A2_pressure(self):
+	def pressure(self):
 		"""Returns current barometric pressure in Pascals."""
-		freescale = Altitude()
+		freescale = MPL3115A2()
 		freescale.set_barometric()
 		raw = freescale.get_data()
-		(press,temp) = freescale.package_output(raw)
+		press = freescale.package_output(raw, 1)
 		while press == None:
 			time.sleep(1)
 			raw = freescale.get_data()
-			(press,temp) = freescale.package_output(raw)
+			press = freescale.package_output(raw, 1)
 		freescale.close_channel()
 		return(press)
 
-	def MPL3115A2_temperature(self):
+	def temperature_alt(self):
 		"""Returns current measured temperature in degrees C."""
-		freescale = Altitude()
-		freescale.set_barometric()
+		freescale = MPL3115A2()
+		freescale.set_barometric()		
 		raw = freescale.get_data()
-		(press,temp) = freescale.package_output(raw)
-		while press == None:
+		temp = freescale.package_output(raw, 2)
+		while temp == None:
 			time.sleep(1)
 			raw = freescale.get_data()
-			(press,temp) = freescale.package_output(raw)
+			temp = freescale.package_output(raw, 2)
 		freescale.close_channel()
 		return(temp)
 
-	def MPL3115A2_altitude(self):
+	def altitude(self):
 		"""Returns current measured altitudea in meters."""
-		freescale = Altitude()
+		freescale = MPL3115A2()
 		freescale.set_altitude()
 		raw = freescale.get_data()
-		(alt,temp) = freescale.package_output(raw)
+		alt = freescale.package_output(raw, 0)
 		while alt == None:
 			time.sleep(1)
 			raw = freescale.get_data()
-			(alt,temp) = freescale.package_output(raw)
+			alt = freescale.package_output(raw, 0)
 		freescale.close_channel()
 		return(alt)
 
@@ -236,12 +259,12 @@ if __name__ == "__main__":
 
 	if ALT_EN == 1:
 		print("MPL3115A2")
-		print("Barometric Pressure %.1f Pa" % ws_cmd_line.MPL3115A2_pressure())
-		print("Altitude %.1f Meters" % ws_cmd_line.MPL3115A2_altitude())
-		print("Temperature %.1f degC" %ws_cmd_line.MPL3115A2_temperature())
+		print("Barometric Pressure %.1f Pa" % ws_cmd_line.pressure())
+		print("Altitude %.1f Meters" % ws_cmd_line.altitude())
+		print("Temperature %.1f degC" %ws_cmd_line.temperature_alt())
 
 	""" Measure Humidity """
 	if HUM_EN == 1:
 		print("HDC1050")
-		print("Humidity %.1f %%" % ws_cmd_line.HDC1050_humidity())
-		print("Temperature %.1f degC" %ws_cmd_line.HDC1050_temperature())
+		print("Humidity %.1f %%" % ws_cmd_line.humidity())
+		print("Temperature %.1f degC" %ws_cmd_line.temperature())
