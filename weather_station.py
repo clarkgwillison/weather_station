@@ -1,4 +1,6 @@
 import time
+import argparse
+
 import pigpio
 
 class PigpioBitBang:
@@ -34,27 +36,27 @@ class PigpioBitBang:
 		if type(data_array) is int:
 			assert data_array < 256
 			data_array = [data_array]
-		(count, data) = self.pi.bb_i2c_zip(self.SDA, [self.BB_ADDRESS, address, self.BB_START, 
-					self.BB_WRITE, len(data_array)+1, pointer_reg] + \
+		(count, data) = self.pi.bb_i2c_zip(self.SDA, [self.BB_ADDRESS, address, 
+					self.BB_START, self.BB_WRITE, len(data_array)+1, pointer_reg] + \
 					data_array + [self.BB_STOP, self.BB_END])
 		return data
 
 	def close_bus(self):
 		self.pi.bb_i2c_close(self.SDA)
 
-class RepeatStart(PigpioBitBang):
-	"""Repeated start hack for TI HDC1050"""
-	def pr_read(self, address, pointer_reg, read_bytes):
-		(count, data) = pi.bb_i2c_zip(SDA, [BB_ADDRESS, address,
-					BB_START, BB_WRITE, BB_ESCAPE, pointer_reg, 
-					BB_START, BB_READ, read_bytes, BB_STOP, BB_END])
-		return data
+class PointerWrite(PigpioBitBang):
+	"""I2C Hack for TI HDC1050"""
+	def pr_write(self, address, pointer_reg):
+		(count, data) = self.pi.bb_i2c_zip(self.SDA, [self.BB_ADDRESS, address,
+					self.BB_START, self.BB_WRITE, self.BB_ESCAPE, pointer_reg, 
+					self.BB_STOP, self.BB_END])
+		return (count, data)
 
-# # abstract sensor base class
-# class sensor(metaclass=ABCMeta):
-# 	def init
-# 	def read
-# 	def write
+	def pr_read(self, address, read_bytes):
+		(count, data) = self.pi.bb_i2c_zip(self.SDA, [self.BB_ADDRESS, address,
+		 			self.BB_START, self.BB_READ, read_bytes, self.BB_STOP, 
+		 			self.BB_END])
+		return (count, data)
 
 class Altitude:
 	"""Freescale XXXXX Driver"""
@@ -102,65 +104,78 @@ class Altitude:
 	def close_channel(self):
 		self.bb_channel.close_bus()
 
-class Ti:
+class Humidity:
 	"""TI HDC1050 Driver"""
 	HUM_I2C = 0x40
 	CONTROL_REG_ADDR = 0x02
-	SETUP = 0x02
-	READ_ADDR = 0x00
+	READ_REG = 0x00
+	SETUP = [0x10, 0x00]
+	READ_BYTES = 0x04
 
 	def __init__(self):
-		self.bb_channel = PigpioBitBang()
+		self.bb_channel = PointerWrite()
 		self.bb_channel.open_bus()
 		self.bb_channel.write(self.HUM_I2C, self.CONTROL_REG_ADDR, self.SETUP)
+		self.bb_channel.pr_write(self.HUM_I2C, self.READ_REG)
 
 	def ready(self):
-		pass
+		(count, data) = self.bb_channel.pr_read(self.HUM_I2C, self.READ_BYTES)
+		if count < 0:
+			return False
+		return True
 
 	def get_data(self):
-		pass
+		(count, data) = self.bb_channel.pr_read(self.HUM_I2C, self.READ_BYTES)
+		return data
 
-	def package_output(self):
-		pass
+	def package_output(self, raw):
+		temp = int.from_bytes(raw[0:2], byteorder='big', signed=False)
+		hum = int.from_bytes(raw[2:4], byteorder='big', signed=False)
+		return (temp, hum)
+
+	def convert_temp(self, raw):
+		return '%.1f'%((raw/(2**16))*165-40)
+
+	def convert_hum(self, raw):
+		return '%.1f'%(raw/(2**16)*100)
 
 	def close_channel(self):
 		self.bb_channel.close_bus()
 
-
+""" Main execution """
 if __name__ == "__main__":
-	freescale = Altitude()
-	for i in range(5000):
+	""" Command line parser to choose between alt and hum measurement """
+	parser = argparse.ArgumentParser(description='Choose between Alt/Bar and Hum measurements')
+	parser.add_argument('--measure', help='--measure alt, --measure hum')
+	args = parser.parse_args()
+
+	HUM_EN = 0
+	ALT_EN = 0
+	if args.measure == "hum":
+		HUM_EN = 1
+	if args.measure == "alt":
+		ALT_EN = 1
+
+	""" Measure Altitude """
+	if ALT_EN == 1:
+		freescale = Altitude()
 		raw = freescale.get_data()
 		(press,temp) = freescale.package_output(raw)
-		print(press, temp)
-		try:
+		while press == None:
 			time.sleep(1)
-		except KeyboardInterrupt:
-			freescale.close_channel()
-			break
+			raw = freescale.get_data()
+			(press,temp) = freescale.package_output(raw)
+		print(press, temp)
+		freescale.close_channel()
 
-
-# def init_hum():
-# 	bb_write(HUM_I2C, H_CONTROL_REG_ADDR, SETUP)
-# 	print("The thing we're reading: %r" % (bb_pr_read(HUM_I2C, 0xFB, 0x04),))
-
-# def read_hum():
-# 	# initialize measurement
-# 	(count, data) = pi.bb_i2c_zip(SDA, [BB_ADDRESS, HUM_I2C,
-# 				BB_START, BB_WRITE, BB_ESCAPE, READ_ADDR, BB_STOP, BB_END])
-
-# 	time.sleep(0.5)
-
-# 	# read measurement
-# 	(count, data) = pi.bb_i2c_zip(SDA, [BB_ADDRESS, HUM_I2C,
-# 				BB_START, BB_READ, 2, BB_STOP, BB_END])
-
-# 	raw_humidity = bb_pr_read(HUM_I2C, READ_ADDR+1, 0x02)
-
-# 	print("temp data: %r  humidity data: %r" % (data, raw_humidity))
-# 	# if len(raw) != 4:
-# 	# 	return (None, None)
-# 	temperature = int.from_bytes(data[0:2 >> 2], byteorder='big', signed=False)
-# 	humidity = int.from_bytes(raw_humidity[2:4] >> 2, byteorder='big', signed=False)
-# 	print(temperature, humidity)
-# 	return (temperature, humidity)
+	""" Measure Humidity """
+	if HUM_EN == 1:
+		ti = Humidity()
+		while ti.ready() == False:
+			time.sleep(1)
+		raw = ti.get_data()
+		(temp, hum) = ti.package_output(raw)
+		temp = ti.convert_temp(temp)
+		hum = ti.convert_hum(hum)
+		print(temp, hum)
+		ti.close_channel()	
