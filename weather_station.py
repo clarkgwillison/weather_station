@@ -59,7 +59,7 @@ class PointerWrite(PigpioBitBang):
 		return (count, data)
 
 class Altitude:
-	"""Freescale XXXXX Driver"""
+	"""Freescale MPL3115A2 Driver"""
 	ALT_I2C = 0x60
 	CONTROL_REG_ADDR = 0x26
 	ALT_OSR_128 = 0xB8
@@ -75,15 +75,15 @@ class Altitude:
 	def __init__(self):
 		self.bb_channel = PigpioBitBang()
 		self.bb_channel.open_bus()
-		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.BAR_OSR_128)
 		self.bb_channel.write(self.ALT_I2C, self.DATA_FLAG_ADDR, self.ENABLE_DATA_FLAG)
+
+	def set_altitude(self):
+		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.ALT_OSR_128)
+		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.ALT_ENABLE)
+
+	def set_barometric(self):
+		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.BAR_OSR_128)
 		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.BAR_ENABLE)
-
-	# def set_altitude(self):
-	# 	pass
-
-	# def set_barometric(self):
-	# 	pass
 
 	def ready(self):
 		data = self.bb_channel.read(self.ALT_I2C, self.STATUS_REG, 1)
@@ -149,7 +149,7 @@ class Humidity:
 		self.bb_channel.close_bus()
 
 class WeatherStation:
-	"""WeatherStation add on board API Class"""
+	"""WeatherStation API for 21 Bitcoin Computer expansion board"""
 
 	def HDC1050_humidity(self):
 		"""Returns current measured humidity as a percentage."""
@@ -176,6 +176,7 @@ class WeatherStation:
 	def MPL3115A2_pressure(self):
 		"""Returns current barometric pressure in Pascals."""
 		freescale = Altitude()
+		freescale.set_barometric()
 		raw = freescale.get_data()
 		(press,temp) = freescale.package_output(raw)
 		while press == None:
@@ -188,6 +189,7 @@ class WeatherStation:
 	def MPL3115A2_temperature(self):
 		"""Returns current measured temperature in degrees C."""
 		freescale = Altitude()
+		freescale.set_barometric()
 		raw = freescale.get_data()
 		(press,temp) = freescale.package_output(raw)
 		while press == None:
@@ -197,18 +199,19 @@ class WeatherStation:
 		freescale.close_channel()
 		return(temp)
 
-	""" NOT IMPLEMENTED YET """
-	# def MPL3115A2_altitude(self):
-	# """Returns current measured altitude in meters."""
-	# 	raw = freescale.get_data()
-	# 	(alt,temp) = freescale.package_output(raw)
-	# 	while alt == None:
-	# 		time.sleep(1)
-	# 		raw = freescale.get_data()
-	# 		(alt,temp) = freescale.package_output(raw)
-	# 	return(alt)
+	def MPL3115A2_altitude(self):
+	"""Returns current measured altitude in meters."""
+		freescale = Altitude()
+		freescale.set_altitude()
+		raw = freescale.get_data()
+		(alt,temp) = freescale.package_output(raw)
+		while alt == None:
+			time.sleep(1)
+			raw = freescale.get_data()
+			(alt,temp) = freescale.package_output(raw)
+		return(alt)
 
-""" Main execution """
+"""Main execution"""
 if __name__ == "__main__":
 	""" Command line parser to choose between alt and hum measurement """
 	parser = argparse.ArgumentParser(description='Choose between Alt/Bar and Hum measurements')
@@ -222,9 +225,10 @@ if __name__ == "__main__":
 	if args.measure == "alt":
 		ALT_EN = 1
 
-	""" Measure Altitude """
+	""" Measure Barometric Pressure """
 	if ALT_EN == 1:
 		freescale = Altitude()
+		freescale.set_barometric()
 		raw = freescale.get_data()
 		(press,temp) = freescale.package_output(raw)
 		while press == None:
@@ -232,6 +236,15 @@ if __name__ == "__main__":
 			raw = freescale.get_data()
 			(press,temp) = freescale.package_output(raw)
 		print(press, temp)
+		""" Measure Altitude """
+		freescale.set_altitude()
+		raw = freescale.get_data()
+		(press,temp) = freescale.package_output(raw)
+		while press == None:
+			time.sleep(1)
+			raw = freescale.get_data()
+			(alt,temp) = freescale.package_output(raw)
+		print(alt, temp)
 		freescale.close_channel()
 
 	""" Measure Humidity """
