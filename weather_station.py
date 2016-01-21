@@ -79,6 +79,12 @@ class Altitude:
 		self.bb_channel.write(self.ALT_I2C, self.DATA_FLAG_ADDR, self.ENABLE_DATA_FLAG)
 		self.bb_channel.write(self.ALT_I2C, self.CONTROL_REG_ADDR, self.BAR_ENABLE)
 
+	# def set_altitude(self):
+	# 	pass
+
+	# def set_barometric(self):
+	# 	pass
+
 	def ready(self):
 		data = self.bb_channel.read(self.ALT_I2C, self.STATUS_REG, 1)
 		if len(data) > 0 and data[0] & (1<<self.STATUS_RDY):
@@ -141,6 +147,66 @@ class Humidity:
 
 	def close_channel(self):
 		self.bb_channel.close_bus()
+
+class WeatherStation:
+	"""WeatherStation add on board API Class"""
+
+	def HDC1050_humidity(self):
+		"""Returns current measured humidity as a percentage."""
+		ti = Humidity()
+		while ti.ready() == False:
+			time.sleep(1)
+		raw = ti.get_data()
+		(temp, hum) = ti.package_output(raw)
+		hum = ti.convert_hum(hum)
+		ti.close_channel()
+		return(hum)
+
+	def HDC1050_temperature(self):
+		"""Returns current measured temperature in degrees C."""
+		ti = Humidity()
+		while ti.ready() == False:
+			time.sleep(1)
+		raw = ti.get_data()
+		(temp, hum) = ti.package_output(raw)
+		temp = ti.convert_temp(temp)
+		ti.close_channel()
+		return(temp)
+
+	def MPL3115A2_pressure(self):
+		"""Returns current barometric pressure in Pascals."""
+		freescale = Altitude()
+		raw = freescale.get_data()
+		(press,temp) = freescale.package_output(raw)
+		while press == None:
+			time.sleep(1)
+			raw = freescale.get_data()
+			(press,temp) = freescale.package_output(raw)
+		freescale.close_channel()
+		return(press)
+
+	def MPL3115A2_temperature(self):
+		"""Returns current measured temperature in degrees C."""
+		freescale = Altitude()
+		raw = freescale.get_data()
+		(press,temp) = freescale.package_output(raw)
+		while press == None:
+			time.sleep(1)
+			raw = freescale.get_data()
+			(press,temp) = freescale.package_output(raw)
+		freescale.close_channel()
+		return(temp)
+
+	""" NOT IMPLEMENTED YET """
+	# def MPL3115A2_altitude(self):
+	# """Returns current measured altitude in meters."""
+	# 	raw = freescale.get_data()
+	# 	(alt,temp) = freescale.package_output(raw)
+	# 	while alt == None:
+	# 		time.sleep(1)
+	# 		raw = freescale.get_data()
+	# 		(alt,temp) = freescale.package_output(raw)
+	# 	return(alt)
 
 """ Main execution """
 if __name__ == "__main__":
